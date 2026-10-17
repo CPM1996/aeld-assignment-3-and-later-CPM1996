@@ -346,8 +346,8 @@ void * timestampTask(void * param)
     int len;
     int ret;
 
-    waitTime.tv_sec = 1;
-    waitTime.tv_nsec = 0*10^6; //100ms
+    waitTime.tv_sec = 0;
+    waitTime.tv_nsec = 1000*10^6; //100ms
     clock_gettime(CLOCK_REALTIME, &lastTime);
     currentTime = lastTime;
     while(globalServerRunning)
