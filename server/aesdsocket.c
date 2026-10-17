@@ -352,8 +352,9 @@ void * timestampTask(void * param)
         clock_gettime(CLOCK_REALTIME, &currentTime);
         localtime_r(&currentTime.tv_sec, &localTime);
 
-        strftime(buf, sizeof(buf), "%a, %d %b %Y %T %z\n", &localTime);
+        strftime(buf, sizeof(buf), "timestamp:%a, %d %b %Y %T %z", &localTime);
         len = strlen(buf);
+        strncat(buf, "\n", sizeof(buf)-1-len);
 
         pthread_mutex_lock(&fdMutex);
         lseek(sharedFd, 0, SEEK_END);
