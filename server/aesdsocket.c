@@ -338,6 +338,7 @@ void * timestampTask(void * param)
     (void) param;
 
     struct timespec currentTime;
+    struct timespec lastTime;
     struct timespec waitTime;
     struct tm localTime;
 
@@ -345,11 +346,12 @@ void * timestampTask(void * param)
     int len;
     int ret;
 
-    waitTime.tv_sec = 10;
-    waitTime.tv_nsec = 0;
+    waitTime.tv_sec = 1;
+    waitTime.tv_nsec = 0*10^6; //100ms
+    clock_gettime(CLOCK_REALTIME, &lastTime);
+    currentTime = lastTime;
     while(globalServerRunning)
     {
-        clock_gettime(CLOCK_REALTIME, &currentTime);
         localtime_r(&currentTime.tv_sec, &localTime);
 
         strftime(buf, sizeof(buf), "timestamp:%a, %d %b %Y %T %z", &localTime);
@@ -366,7 +368,12 @@ void * timestampTask(void * param)
         }
         pthread_mutex_unlock(&fdMutex);
 
-        nanosleep(&waitTime, NULL);
+        lastTime = currentTime;
+        while((globalServerRunning) && (abs(currentTime.tv_sec - lastTime.tv_sec) < 10))
+        {
+            nanosleep(&waitTime, NULL);
+            clock_gettime(CLOCK_REALTIME, &currentTime);
+        }
     }
 
     return NULL;
