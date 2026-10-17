@@ -11,11 +11,27 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <pthread.h>
+#include <time.h>
+#include "aesdsocket_linkedList.h"
 
 #define SOCKETDATA_PATH "/var/tmp/aesdsocketdata"
 #define AESDSOCKET_PORT_STR "9000"
 
+typedef struct
+{
+    LinkedListElement linkedListElem;
+    pthread_t thread;
+    int connSocketFd;
+    struct in_addr clientAddr;
+} CONN_INFO_T;
+
 int globalServerRunning = 1;
+
+int sharedFd = -1;
+pthread_mutex_t fdMutex;
+LinkedList threadsList;
+
 
 void signalHandler(int)
 {
@@ -23,8 +39,17 @@ void signalHandler(int)
     globalServerRunning = 0;
 }
 
-int attendConn(int connSocketFd, int fileFd);
-int processPacket(int connSocketFd, int fileFd, char *buf, int len);
+int joinCallback(LinkedListElement *elem, void *param)
+{
+    (void) param;
+
+    return pthread_join(((CONN_INFO_T *)elem)->thread, NULL);
+}
+
+int attendConn(CONN_INFO_T *connInfo);
+int processPacket(int connSocketFd, char *buf, int len);
+int createConnTask(int connSocketFd, struct in_addr clientAddr);
+void *timestampTask(void * param);
 
 int main(const int argc, const char *argv[])
 {
@@ -44,7 +69,8 @@ int main(const int argc, const char *argv[])
     struct sockaddr_in connSockAddr;
     socklen_t conSockAddrLen = sizeof(connSockAddr);
 
-    int fileFd = -1;
+    CONN_INFO_T *auxConnInfo;
+    pthread_t timestampThread;
 
     if(argc > 2)
     {
@@ -123,10 +149,22 @@ int main(const int argc, const char *argv[])
         }
     }
 
-    fileFd = open(SOCKETDATA_PATH, O_RDWR | O_CREAT | O_APPEND, S_IRWXU);
-    if(fileFd < 0)
+    sharedFd = open(SOCKETDATA_PATH, O_RDWR | O_CREAT | O_APPEND, S_IRWXU);
+    if(sharedFd < 0)
     {
         snprintf(sLogBuff, sizeof(sLogBuff), "Error on open(): %s", strerror(errno));
+        syslog(LOG_ERR, sLogBuff);
+
+        close(socketfd);
+        return -1;
+    }
+
+    pthread_mutex_init(&fdMutex, NULL);
+    initLinkedList(&threadsList);
+
+    if(pthread_create(&timestampThread, NULL, timestampTask, NULL))
+    {
+        snprintf(sLogBuff, sizeof(sLogBuff), "Error on pthread_create(): %s", strerror(errno));
         syslog(LOG_ERR, sLogBuff);
 
         close(socketfd);
@@ -148,22 +186,19 @@ int main(const int argc, const char *argv[])
             break;
         }
 
-        snprintf(sLogBuff, sizeof(sLogBuff), "Accepted connection from %s",
-            inet_ntoa(connSockAddr.sin_addr));
-        syslog(LOG_INFO, sLogBuff);
-        
-
-        attendConn(connSocketFd, fileFd);
-        
-        close(connSocketFd);
-        snprintf(sLogBuff, sizeof(sLogBuff), "Closed connection from %s",
-            inet_ntoa(connSockAddr.sin_addr));
-        syslog(LOG_INFO, sLogBuff);
+        createConnTask(connSocketFd, connSockAddr.sin_addr);
+        // attendConn(connSocketFd);
     }
 
-    if(fileFd != -1)
+    travelList((LinkedList *) &threadsList, joinCallback, NULL);
+
+    pthread_join(timestampThread, NULL);
+
+    pthread_mutex_destroy(&fdMutex);
+
+    if(sharedFd != -1)
     {
-        close(fileFd);
+        close(sharedFd);
     }
 
     remove(SOCKETDATA_PATH);
@@ -172,16 +207,38 @@ int main(const int argc, const char *argv[])
     return 0;
 }
 
-int attendConn(int connSocketFd, int fileFd)
+int createConnTask(int connSocketFd, struct in_addr clientAddr)
+{
+    CONN_INFO_T *connInfo;
+
+    connInfo = malloc(sizeof(CONN_INFO_T));
+    if(connInfo == NULL)
+    {
+        return -1;
+    }
+
+    connInfo->connSocketFd = connSocketFd;
+    connInfo->clientAddr = clientAddr;
+    insertElement(&threadsList, (LinkedListElement *) connInfo);
+
+    return pthread_create(&connInfo->thread, NULL, (void *(*)(void *)) attendConn, connInfo);
+}
+
+int attendConn(CONN_INFO_T *connInfo)
 {
     int recvSize;
     int recvCompleted = 0;
     char dataBuffer[256];
+    int connSocketFd = connInfo->connSocketFd;
 
     char *fullDataBuffer = NULL;
     int fullDataBufferSize = 0, fullDataBufferLen = 0;
     int i;
     char *src, *dst;
+
+    snprintf(dataBuffer, sizeof(dataBuffer), "Accepted connection from %s",
+            inet_ntoa(connInfo->clientAddr));
+    syslog(LOG_INFO, dataBuffer);
 
     while(!recvCompleted)
     {
@@ -206,6 +263,7 @@ int attendConn(int connSocketFd, int fileFd)
                 {
                     snprintf(dataBuffer, sizeof(dataBuffer), "Error on realloc(): %s", strerror(errno));
                     syslog(LOG_ERR, dataBuffer);
+                    // deleteElement((LinkedList *) threadsList, (LinkedListElement *) connInfo);
                     return -1;
                 }
             }
@@ -217,7 +275,7 @@ int attendConn(int connSocketFd, int fileFd)
                 *dst = *src;
                 if(*dst == '\n')
                 {
-                    processPacket(connSocketFd, fileFd, fullDataBuffer, fullDataBufferLen+1);
+                    processPacket(connSocketFd, fullDataBuffer, fullDataBufferLen+1);
                     
                     fullDataBufferLen = 0;
                     dst = fullDataBuffer;
@@ -227,29 +285,39 @@ int attendConn(int connSocketFd, int fileFd)
     }
 
     free(fullDataBuffer);
+    close(connSocketFd);
+
+    snprintf(dataBuffer, sizeof(dataBuffer), "Closed connection from %s",
+        inet_ntoa(connInfo->clientAddr));
+    syslog(LOG_INFO, dataBuffer);
+
+    // deleteElement((LinkedList *) threadsList, (LinkedListElement *) connInfo);
 
     return 0;
 }
 
-int processPacket(int connSocketFd, int fileFd, char *buf, int len)
+int processPacket(int connSocketFd, char *buf, int len)
 {
     char readBuff[256];
     int readChars;
     int ret;
 
-    lseek(fileFd, 0, SEEK_END);
-    ret = write(fileFd, buf, len);
+    pthread_mutex_lock(&fdMutex);
+
+    lseek(sharedFd, 0, SEEK_END);
+    ret = write(sharedFd, buf, len);
     if((ret < len) && (errno != EINTR))
     {
+        pthread_mutex_unlock(&fdMutex);
         return -1;
     }
 
-    lseek(fileFd, 0, SEEK_SET);
+    lseek(sharedFd, 0, SEEK_SET);
     
     errno = 0;
     do
     {
-        readChars = read(fileFd, readBuff, sizeof(readBuff));
+        readChars = read(sharedFd, readBuff, sizeof(readBuff));
         if((readChars > 0))
         {
             send(connSocketFd, readBuff, readChars, 0);
@@ -261,4 +329,44 @@ int processPacket(int connSocketFd, int fileFd, char *buf, int len)
             errno = 0;
         }
     }while(readChars > 0);
+
+    pthread_mutex_unlock(&fdMutex);
+}
+
+void * timestampTask(void * param)
+{
+    (void) param;
+
+    struct timespec currentTime;
+    struct timespec waitTime;
+    struct tm localTime;
+
+    char buf[32];
+    int len;
+    int ret;
+
+    waitTime.tv_sec = 10;
+    waitTime.tv_nsec = 0;
+    while(globalServerRunning)
+    {
+        clock_gettime(CLOCK_REALTIME, &currentTime);
+        localtime_r(&currentTime.tv_sec, &localTime);
+
+        strftime(buf, sizeof(buf), "%a, %d %b %Y %T %z\n", &localTime);
+        len = strlen(buf);
+
+        pthread_mutex_lock(&fdMutex);
+        lseek(sharedFd, 0, SEEK_END);
+        ret = write(sharedFd, buf, len);
+        if((ret < len) && (errno != EINTR))
+        {
+            pthread_mutex_unlock(&fdMutex);
+            return NULL;
+        }
+        pthread_mutex_unlock(&fdMutex);
+
+        nanosleep(&waitTime, NULL);
+    }
+
+    return NULL;
 }
