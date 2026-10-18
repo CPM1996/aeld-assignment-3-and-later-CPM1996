@@ -69,7 +69,6 @@ int main(const int argc, const char *argv[])
     struct sockaddr_in connSockAddr;
     socklen_t conSockAddrLen = sizeof(connSockAddr);
 
-    CONN_INFO_T *auxConnInfo;
     pthread_t timestampThread;
 
     if(argc > 2)
@@ -331,6 +330,8 @@ int processPacket(int connSocketFd, char *buf, int len)
     }while(readChars > 0);
 
     pthread_mutex_unlock(&fdMutex);
+
+    return 0;
 }
 
 void * timestampTask(void * param)
