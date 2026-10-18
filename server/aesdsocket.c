@@ -56,7 +56,6 @@ int main(const int argc, const char *argv[])
     struct sigaction sigAction = {0};
     int isDaemon = 0;
 
-    char sLogBuff[128];
     int ret;
     
     
@@ -93,8 +92,7 @@ int main(const int argc, const char *argv[])
     socketfd = socket(AF_INET, SOCK_STREAM, 0);
     if(socketfd < 0)
     {
-        snprintf(sLogBuff, sizeof(sLogBuff), "Error while creating socket: %s", strerror(errno));
-        syslog(LOG_ERR, sLogBuff);
+        syslog(LOG_ERR, "Error while creating socket: %s", strerror(errno));
         return -1;
     }
 
@@ -104,8 +102,7 @@ int main(const int argc, const char *argv[])
     ret = getaddrinfo(NULL, AESDSOCKET_PORT_STR, &hints, &pAddrInfo);
     if(ret != 0)
     {
-        snprintf(sLogBuff, sizeof(sLogBuff), "Error on getaddrinfo(): %s", gai_strerror(ret));
-        syslog(LOG_ERR, sLogBuff);
+        syslog(LOG_ERR, "Error on getaddrinfo(): %s", gai_strerror(ret));
         close(socketfd);
         return -1;
     }
@@ -114,8 +111,7 @@ int main(const int argc, const char *argv[])
     freeaddrinfo(pAddrInfo);
     if(ret != 0)
     {
-        snprintf(sLogBuff, sizeof(sLogBuff), "Error while binding socket: %s", strerror(errno));
-        syslog(LOG_ERR, sLogBuff);
+        syslog(LOG_ERR, "Error while binding socket: %s", strerror(errno));
 
         close(socketfd);
         return -1;
@@ -124,8 +120,7 @@ int main(const int argc, const char *argv[])
     ret = listen(socketfd, 16);
     if(ret != 0)
     {
-        snprintf(sLogBuff, sizeof(sLogBuff), "Error on listen(): %s", strerror(errno));
-        syslog(LOG_ERR, sLogBuff);
+        syslog(LOG_ERR, "Error on listen(): %s", strerror(errno));
 
         close(socketfd);
         return -1;
@@ -136,8 +131,7 @@ int main(const int argc, const char *argv[])
         ret = fork();
         if(ret <0)
         {
-            snprintf(sLogBuff, sizeof(sLogBuff), "Error on listen(): %s", strerror(errno));
-            syslog(LOG_ERR, sLogBuff);
+            syslog(LOG_ERR, "Error on fork(): %s", strerror(errno));
 
             close(socketfd);
             return -1;
@@ -151,8 +145,7 @@ int main(const int argc, const char *argv[])
     sharedFd = open(SOCKETDATA_PATH, O_RDWR | O_CREAT | O_APPEND, S_IRWXU);
     if(sharedFd < 0)
     {
-        snprintf(sLogBuff, sizeof(sLogBuff), "Error on open(): %s", strerror(errno));
-        syslog(LOG_ERR, sLogBuff);
+        syslog(LOG_ERR, "Error on open(): %s", strerror(errno));
 
         close(socketfd);
         return -1;
@@ -163,8 +156,7 @@ int main(const int argc, const char *argv[])
 
     if(pthread_create(&timestampThread, NULL, timestampTask, NULL))
     {
-        snprintf(sLogBuff, sizeof(sLogBuff), "Error on pthread_create(): %s", strerror(errno));
-        syslog(LOG_ERR, sLogBuff);
+        syslog(LOG_ERR, "Error on pthread_create(): %s", strerror(errno));
 
         close(socketfd);
         return -1;
@@ -179,8 +171,7 @@ int main(const int argc, const char *argv[])
         {
             if(errno != EINTR)
             {
-                snprintf(sLogBuff, sizeof(sLogBuff), "Error on accept(): %s", strerror(errno));
-                syslog(LOG_ERR, sLogBuff);
+                syslog(LOG_ERR, "Error on accept(): %s", strerror(errno));
             }
             break;
         }
@@ -235,18 +226,15 @@ int attendConn(CONN_INFO_T *connInfo)
     int i;
     char *src, *dst;
 
-    snprintf(dataBuffer, sizeof(dataBuffer), "Accepted connection from %s",
-            inet_ntoa(connInfo->clientAddr));
-    syslog(LOG_INFO, dataBuffer);
+    syslog(LOG_INFO, "Accepted connection from %s", inet_ntoa(connInfo->clientAddr));
 
     while(!recvCompleted)
     {
         recvSize = recv(connSocketFd, dataBuffer, sizeof(dataBuffer), SA_RESTART);
         if((recvSize < 0) && (errno != EINTR))
         {
+            syslog(LOG_ERR, "Error on recv(): %s", strerror(errno));
             recvCompleted = 1;
-            snprintf(dataBuffer, sizeof(dataBuffer), "Error on recv(): %s", strerror(errno));
-            syslog(LOG_ERR, dataBuffer);
         }
         else if(recvSize == 0)
         {
@@ -260,9 +248,7 @@ int attendConn(CONN_INFO_T *connInfo)
                 fullDataBuffer = realloc(fullDataBuffer, fullDataBufferSize);
                 if(fullDataBuffer == NULL)
                 {
-                    snprintf(dataBuffer, sizeof(dataBuffer), "Error on realloc(): %s", strerror(errno));
-                    syslog(LOG_ERR, dataBuffer);
-                    // deleteElement((LinkedList *) threadsList, (LinkedListElement *) connInfo);
+                    syslog(LOG_ERR, "Error on realloc(): %s", strerror(errno));
                     return -1;
                 }
             }
@@ -286,9 +272,7 @@ int attendConn(CONN_INFO_T *connInfo)
     free(fullDataBuffer);
     close(connSocketFd);
 
-    snprintf(dataBuffer, sizeof(dataBuffer), "Closed connection from %s",
-        inet_ntoa(connInfo->clientAddr));
-    syslog(LOG_INFO, dataBuffer);
+    syslog(LOG_INFO, "Closed connection from %s", inet_ntoa(connInfo->clientAddr));
 
     // deleteElement((LinkedList *) threadsList, (LinkedListElement *) connInfo);
 
