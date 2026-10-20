@@ -92,7 +92,7 @@ int main(const int argc, const char *argv[])
     socketfd = socket(AF_INET, SOCK_STREAM, 0);
     if(socketfd < 0)
     {
-        syslog(LOG_ERR, "Error while creating socket: %s", strerror(errno));
+        syslog(LOG_ERR, "Error while creating socket: %m");
         return -1;
     }
 
@@ -111,7 +111,7 @@ int main(const int argc, const char *argv[])
     freeaddrinfo(pAddrInfo);
     if(ret != 0)
     {
-        syslog(LOG_ERR, "Error while binding socket: %s", strerror(errno));
+        syslog(LOG_ERR, "Error while binding socket: %m");
 
         close(socketfd);
         return -1;
@@ -120,7 +120,7 @@ int main(const int argc, const char *argv[])
     ret = listen(socketfd, 16);
     if(ret != 0)
     {
-        syslog(LOG_ERR, "Error on listen(): %s", strerror(errno));
+        syslog(LOG_ERR, "Error on listen(): %m");
 
         close(socketfd);
         return -1;
@@ -131,7 +131,7 @@ int main(const int argc, const char *argv[])
         ret = fork();
         if(ret <0)
         {
-            syslog(LOG_ERR, "Error on fork(): %s", strerror(errno));
+            syslog(LOG_ERR, "Error on fork(): %m");
 
             close(socketfd);
             return -1;
@@ -145,7 +145,7 @@ int main(const int argc, const char *argv[])
     sharedFd = open(SOCKETDATA_PATH, O_RDWR | O_CREAT | O_APPEND, S_IRWXU);
     if(sharedFd < 0)
     {
-        syslog(LOG_ERR, "Error on open(): %s", strerror(errno));
+        syslog(LOG_ERR, "Error on open(): %m");
 
         close(socketfd);
         return -1;
@@ -156,7 +156,7 @@ int main(const int argc, const char *argv[])
 
     if(pthread_create(&timestampThread, NULL, timestampTask, NULL))
     {
-        syslog(LOG_ERR, "Error on pthread_create(): %s", strerror(errno));
+        syslog(LOG_ERR, "Error on pthread_create(): %m");
 
         close(socketfd);
         return -1;
@@ -171,7 +171,7 @@ int main(const int argc, const char *argv[])
         {
             if(errno != EINTR)
             {
-                syslog(LOG_ERR, "Error on accept(): %s", strerror(errno));
+                syslog(LOG_ERR, "Error on accept(): %m");
             }
             break;
         }
@@ -233,7 +233,7 @@ int attendConn(CONN_INFO_T *connInfo)
         recvSize = recv(connSocketFd, dataBuffer, sizeof(dataBuffer), SA_RESTART);
         if((recvSize < 0) && (errno != EINTR))
         {
-            syslog(LOG_ERR, "Error on recv(): %s", strerror(errno));
+            syslog(LOG_ERR, "Error on recv(): %m");
             recvCompleted = 1;
         }
         else if(recvSize == 0)
@@ -248,7 +248,7 @@ int attendConn(CONN_INFO_T *connInfo)
                 fullDataBuffer = realloc(fullDataBuffer, fullDataBufferSize);
                 if(fullDataBuffer == NULL)
                 {
-                    syslog(LOG_ERR, "Error on realloc(): %s", strerror(errno));
+                    syslog(LOG_ERR, "Error on realloc(): %m");
                     return -1;
                 }
             }
@@ -327,7 +327,7 @@ void * timestampTask(void * param)
     struct timespec waitTime;
     struct tm localTime;
 
-    char buf[32];
+    char buf[64];
     int len;
     int ret;
 
