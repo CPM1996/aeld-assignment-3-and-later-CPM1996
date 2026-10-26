@@ -34,7 +34,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     */
     size_t remainingOffset = char_offset;
     uint8_t currentIndex = buffer->out_offs;
-    aesd_buffer_entry *currentEntry;
+    struct aesd_buffer_entry *currentEntry;
 
     while(remainingOffset > 0)
     {
