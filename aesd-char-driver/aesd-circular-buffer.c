@@ -13,6 +13,7 @@
 #else
 #include <string.h>
 #endif
+#include <stdio.h>
 
 #include "aesd-circular-buffer.h"
 
@@ -35,21 +36,23 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     size_t remainingOffset = char_offset;
     uint8_t currentIndex = buffer->out_offs;
     struct aesd_buffer_entry *currentEntry;
+    bool bufferFull = buffer->full;
 
-    while(remainingOffset > 0)
+    while(remainingOffset >= 0)
     {
         currentEntry = &buffer->entry[currentIndex];
-        if(remainingOffset == buffer->in_offs)
+        if((currentIndex == buffer->in_offs) && (!bufferFull))
         {
             currentEntry = NULL;
             break;
         }
-        else if (currentEntry->size < remainingOffset)
+        else if (remainingOffset < currentEntry->size)
         {
             *entry_offset_byte_rtn = remainingOffset;
             break;
         }
 
+        bufferFull = false;
         remainingOffset -= currentEntry->size;
         currentIndex++;
         if(currentIndex >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
